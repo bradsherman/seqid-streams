@@ -23,7 +23,7 @@ tests =
         "seqid-streams tests"
         [ testCase "sequenceIdInputStream can be reset" $ do
             is <- Streams.fromList [1, 2, 3, 1, 5, 2 :: Int]
-            (is', resetSeqId) <- sequenceIdInputStream 0 id (throw . SeqIdException) is
+            (is', resetSeqId) <- sequenceIdInputStream 0 id (const True) (throw . SeqIdException) is
             r1 <- Streams.read is'
             r1 @?= Just 1
 
@@ -53,7 +53,7 @@ tests =
             pure ()
         , testCase "sequenceIdOutputStream can be reset" $ do
             (os, getList) <- Streams.listOutputStream :: IO (Streams.OutputStream (Int, Int), IO [(Int, Int)])
-            (outStream', resetSeqId) <- sequenceIdOutputStream 0 (,) os
+            (outStream', resetSeqId) <- sequenceIdOutputStream 0 (,) (const Nothing) os
             Streams.write (Just 6) outStream'
             Streams.write (Just 7) outStream'
 

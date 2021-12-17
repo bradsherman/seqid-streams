@@ -7,8 +7,10 @@ module System.IO.Streams.SequenceId (
 ) where
 
 import Control.Applicative ((<$>))
+import Control.Monad (when)
 import Data.Foldable (traverse_)
 import Data.IORef (atomicModifyIORef', newIORef, readIORef, writeIORef)
+import Data.Maybe (fromMaybe)
 import Data.SequenceId (
     SequenceIdError,
     checkSeqId,
@@ -44,6 +46,8 @@ sequenceIdInputStream ::
     s ->
     -- | Function applied to each element of the stream to get the sequence ID
     (a -> s) ->
+    -- | Function to determine whether we should check the sequence ID
+    (a -> Bool) ->
     -- | Error handler
     (SequenceIdError s -> IO ()) ->
     -- | 'System.IO.Streams.InputStream' to check the sequence of
@@ -51,13 +55,16 @@ sequenceIdInputStream ::
     -- | Pass-through of the given stream, and 'IO' action that returns
     -- the current sequence id and then resets it to the initial seed
     IO (InputStream a, s -> IO s)
-sequenceIdInputStream initSeqId getSeqId seqIdFaultHandler =
+sequenceIdInputStream initSeqId getSeqId shouldCheckSeqId seqIdFaultHandler =
     inputFoldM f initSeqId
   where
     f lastSeqId x = do
         let currSeqId = getSeqId x
-        traverse_ seqIdFaultHandler $ checkSeqId lastSeqId currSeqId
-        return $ max currSeqId lastSeqId
+         in if shouldCheckSeqId x
+                then do
+                    traverse_ seqIdFaultHandler $ checkSeqId lastSeqId currSeqId
+                    pure $ max currSeqId lastSeqId
+                else pure lastSeqId
 
 
 -- very slightly modified version of Streams.inputFoldM
@@ -114,17 +121,21 @@ sequenceIdOutputStream ::
     s ->
     -- | Transformation function
     (s -> a -> b) ->
+    -- | Function to determine whether we should use a fresh sequence ID
+    -- 'Nothing' means use fresh seqId
+    -- 'Just s' means use 's' as the seqId and don't increment
+    (a -> Maybe s) ->
     -- | 'System.IO.Streams.OutputStream' to count the elements of
     OutputStream b ->
     -- | returns a new stream as well as an 'IO' action that
     -- returns the current sequence id and then resets it to
     -- the initial seed
     IO (OutputStream a, s -> IO s)
-sequenceIdOutputStream i f = outputFoldM f' i
+sequenceIdOutputStream i f shouldUseFreshSeqId = outputFoldM f' i
   where
     f' seqId bdy = (nextSeqId, f nextSeqId bdy)
       where
-        nextSeqId = incrementSeqId seqId
+        nextSeqId = fromMaybe (incrementSeqId seqId) $ shouldUseFreshSeqId bdy
 
 
 -- very slightly modified version of Streams.outputFoldM
